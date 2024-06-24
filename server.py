@@ -4,6 +4,7 @@ import socket
 import json
 import threading
 import requests
+from colorama import Fore
 from dotenv import load_dotenv, dotenv_values
 from ai_utils import AIClient
 from game_logic import Player
@@ -39,11 +40,11 @@ class Server:
                         with self.lock:
                             player = self.clients.get(client_socket)
                             if player:
-                                print(f"\r\n{str(data['content'])}")
+                                print(Fore.RED + f"\r\n{str(data['content'])}")
                             else:
-                                print(f"\r\nUnknown Player: {str(data['content'])}")
+                                print(Fore.RED + f"\r\nUnknown Player: {str(data['content'])}")
                             response = self.ai_client.generate_text(str(data["content"]))
-                            print(f"\nAI: {response}")
+                            print(Fore.WHITE + f"\nAI: {response}")
                             client_socket.send(json.dumps({"type": "AI_RESPONSE", "content": response}).encode("utf-8"))
         except Exception as e:
             print(f"Error: {e}")
@@ -73,12 +74,11 @@ class Server:
     def server_input(self):
         while True:
             prompt = f"\n{self.server_player.name}: "
-            prompt += input(prompt)
-            print("\n" + prompt)
+            prompt += input(Fore.BLUE + prompt)
             self.broadcast({"type": "SERVER_MESSAGE",
                             "content": prompt})
             response = self.ai_client.generate_text(prompt)
-            print(f"\nAI: {response}")
+            print(Fore.WHITE + f"\nAI: {response}")
             self.broadcast({"type": "AI_RESPONSE", 
                             "content": response})
 
@@ -116,7 +116,7 @@ class Server:
 
             self.system_prompt += base_prompt + f"""
             Respond creatively to the player's actions, providing vivid descriptions that shape the narrative.
-            Keep the tone engaging and the story creative.
+            Keep the tone engaging and the story creative. Don't talk for the player.
             """
             self.ai_client.system_prompt = self.system_prompt
             self.play_solo()
@@ -125,7 +125,7 @@ class Server:
             self.system_prompt = f"""
             Facilitate a cooperative adventure between multiple players. 
             Respond to their actions providing vivid descriptions that shape the shared narrative. 
-            Keep the tone engaging and the story creative
+            Keep the tone engaging and the story creative. Don't talk for the players.
             """
             self.system_prompt += base_prompt + f"""
             The first player's character is {self.server_player.name}.
@@ -136,9 +136,9 @@ class Server:
 
     def play_solo(self):
         while True:
-            prompt = input(f"\n{self.server_player.name}: ")
+            prompt = input(Fore.BLUE + f"\n{self.server_player.name}: ")
             response = self.ai_client.generate_text(prompt)
-            print(f"\nAI: {response}")
+            print(Fore.WHITE + f"\nAI: {response}")
 
 if __name__ == "__main__":
     server = Server(MODEL)

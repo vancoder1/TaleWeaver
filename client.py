@@ -2,6 +2,7 @@ import socket
 import time
 import json
 import threading
+from colorama import Fore
 from game_logic import Player
 
 class Client:
@@ -19,17 +20,17 @@ class Client:
                     with self.lock:
                         data = json.loads(message)
                         if data["type"] == "SERVER_MESSAGE":
-                            print(f"\r\n{str(data['content'])}")
+                            print(Fore.BLUE + f"\r\n{str(data['content'])}")
                         if data["type"] == "AI_RESPONSE":
-                            print(f"\nAI: {str(data['content'])}")
+                            print(Fore.WHITE + f"\nAI: {str(data['content'])}")
         except Exception as e:
             print(f"Error: {e}")
             client_socket.close()
 
-    def send_messages(self, client_socket):
+    def client_input(self, client_socket):
         while True:
             prompt = f"\n{self.client_player.name}: "
-            prompt += input(prompt)
+            prompt += input(Fore.RED + prompt)
             client_socket.send(json.dumps({"type": "CLIENT_MESSAGE", "content": prompt}).encode('utf-8'))
 
     def start_client(self):
@@ -41,25 +42,13 @@ class Client:
                 self.set_character(client)  # Prompt for character setup immediately after connecting
 
                 receive_thread = threading.Thread(target=self.receive_messages, args=(client,))
-                send_thread = threading.Thread(target=self.send_messages, args=(client,))
+                input_thread = threading.Thread(target=self.client_input, args=(client,))
                 receive_thread.start()
-                send_thread.start()
+                input_thread.start()
                 break  # Exit the loop once connected
             except socket.error as e:
                 print(f"Connection failed: {e}. Retrying in 3 seconds...")
                 time.sleep(3)  # Wait for 3 seconds before retrying
-
-    def server_input(self):
-        while True:
-            prompt = f"\n{self.server_player.name}: "
-            prompt += input(prompt)
-            print("\n" + prompt)
-            self.broadcast({"type": "SERVER_MESSAGE",
-                            "content": prompt})
-            response = self.ai_client.generate_text(prompt)
-            print(f"\nAI: {response}")
-            self.broadcast({"type": "AI_RESPONSE", 
-                            "content": response})
 
     def set_character(self, client_socket):
         self.client_player.name = input("Enter your character's name: ").strip()
