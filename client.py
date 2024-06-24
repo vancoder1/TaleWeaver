@@ -1,10 +1,13 @@
 import socket
+import time
 import json
 import threading
 from game_logic import Player
 
 class Client:
     def __init__(self):
+        self.server_ip = "127.0.0.1"
+        self.port = 5555
         self.client_player = Player()
         self.lock = threading.Lock()  # Lock to manage input blocking
 
@@ -30,15 +33,21 @@ class Client:
             client_socket.send(json.dumps({"type": "CLIENT_MESSAGE", "content": prompt}).encode('utf-8'))
 
     def start_client(self):
-        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.connect(("127.0.0.1", 5555))
-        print("Connected to the server.")
-        self.set_character(client)  # Prompt for character setup immediately after connecting
+        while True:
+            try:
+                client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                client.connect((self.server_ip, self.port))
+                print("Connected to the server.")
+                self.set_character(client)  # Prompt for character setup immediately after connecting
 
-        receive_thread = threading.Thread(target=self.receive_messages, args=(client,))
-        send_thread = threading.Thread(target=self.send_messages, args=(client,))
-        receive_thread.start()
-        send_thread.start()
+                receive_thread = threading.Thread(target=self.receive_messages, args=(client,))
+                send_thread = threading.Thread(target=self.send_messages, args=(client,))
+                receive_thread.start()
+                send_thread.start()
+                break  # Exit the loop once connected
+            except socket.error as e:
+                print(f"Connection failed: {e}. Retrying in 3 seconds...")
+                time.sleep(3)  # Wait for 3 seconds before retrying
 
     def server_input(self):
         while True:
@@ -59,4 +68,7 @@ class Client:
 
 if __name__ == "__main__":
     client = Client()
+    server_ip = input("Enter server's IP (leave empty if localhost): ")
+    if server_ip:
+        client.server_ip = server_ip
     client.start_client()

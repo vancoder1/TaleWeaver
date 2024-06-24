@@ -15,7 +15,8 @@ MODEL = os.getenv("MODEL")
 
 class Server:
     def __init__(self, model):
-        self.turn = "server"
+        self.host_name = socket.gethostbyname("0.0.0.0")
+        self.port = 5555
         self.model = model
         self.system_prompt = ""
         self.clients = {}
@@ -56,7 +57,7 @@ class Server:
 
     def start_server(self):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.bind(("0.0.0.0", 5555))
+        server_socket.bind((self.host_name, self.port))
         server_socket.listen(5)
         print("Server started. Waiting for connections...")
 
