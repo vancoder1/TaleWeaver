@@ -16,7 +16,7 @@ class Client:
                     with self.lock:
                         data = json.loads(message)
                         if data["type"] == "SERVER_MESSAGE":
-                            print(f"\n{str(data['content'])}")
+                            print(f"\r\n{str(data['content'])}")
                         if data["type"] == "AI_RESPONSE":
                             print(f"\nAI: {str(data['content'])}")
         except Exception as e:

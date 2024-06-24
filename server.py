@@ -38,9 +38,9 @@ class Server:
                         with self.lock:
                             player = self.clients.get(client_socket)
                             if player:
-                                print(f"\n{str(data['content'])}")
+                                print(f"\r\n{str(data['content'])}")
                             else:
-                                print(f"\nUnknown Player: {str(data['content'])}")
+                                print(f"\r\nUnknown Player: {str(data['content'])}")
                             response = self.ai_client.generate_text(str(data["content"]))
                             print(f"\nAI: {response}")
                             client_socket.send(json.dumps({"type": "AI_RESPONSE", "content": response}).encode("utf-8"))

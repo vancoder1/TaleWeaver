@@ -42,11 +42,11 @@ if exist requirements.txt (
 )
 
 :: Run main.py
-if exist main.py (
-    echo Running main.py
-    python main.py
+if exist server.py (
+    echo Running server.py
+    python server.py
 ) else (
-    echo main.py not found.
+    echo server.py not found.
     goto end
 )
 
