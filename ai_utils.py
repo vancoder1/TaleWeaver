@@ -1,25 +1,94 @@
-from groq import Groq
+import os
+import json
+from typing import AsyncGenerator, Optional, List
+from langchain_groq import ChatGroq
+from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain.memory import ConversationSummaryBufferMemory
+from langchain_community.chat_message_histories.file import FileChatMessageHistory
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+import aiofiles
 
 class AIClient:
-    def __init__(self, api_key, model, system_prompt):
-        self.client = Groq(api_key=api_key)
+    def __init__(self, 
+                 api_key: str, 
+                 model: str, 
+                 system_prompt: Optional[str] = "You are guiding an immersive adventure",
+                 session_id: str = "taleweaver_session",
+                 history_dir: str = "data/chats"):
         self.model = model
+        self.api_key = api_key
         self.system_prompt = system_prompt
-    
-    def generate_text(self, prompt):
-        messages = [{"role": "user", "content": prompt}]
-        if self.system_prompt:
-            messages.insert(0, {"role": "system", "content": self.system_prompt})
+        self.session_id = session_id
+        self.history_dir = history_dir
+        os.makedirs(self.history_dir, exist_ok=True)
+        self._initialize_components()
 
-        stream = self.client.chat.completions.create(
-            messages=messages,
-            model=self.model,
-            stop=None,
-            stream=True
+    def _initialize_components(self):
+        self.llm = ChatGroq(api_key=self.api_key, model=self.model, streaming=True)
+        self.memory = self._initialize_memory()
+        self.chain = self._initialize_chain()
+
+    def _initialize_memory(self):
+        file_history = FileChatMessageHistory(self._get_history_file_path())
+        return ConversationSummaryBufferMemory(
+            llm=self.llm,
+            chat_memory=file_history,
+            max_token_limit=100,
+            return_messages=True
         )
 
-        response = ""
-        for chunk in stream:
-            if chunk.choices[0].delta.content is not None:
-                response += chunk.choices[0].delta.content
-        return response
+    def _get_history_file_path(self) -> str:
+        return os.path.join(self.history_dir, f"{self.session_id}.json")
+
+    def _initialize_chain(self):
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", self.system_prompt),
+            MessagesPlaceholder(variable_name="history"),
+            ("human", "{input}"),
+        ])
+
+        chain = prompt | self.llm | StrOutputParser()
+
+        return RunnableWithMessageHistory(
+            chain,
+            lambda session_id: self.memory.chat_memory,
+            input_messages_key="input",
+            history_messages_key="history"
+        )  
+    
+    async def generate(self, input_text: str) -> str:
+        try:
+            return await self.chain.ainvoke(
+                {"input": input_text},
+                config={"configurable": {"session_id": self.session_id}}
+            )
+        except FileNotFoundError:
+            await self._create_empty_history_file()
+            return await self.chain.ainvoke(
+                {"input": input_text},
+                config={"configurable": {"session_id": self.session_id}}
+            )
+
+    async def start_new_session(self, session_id: str):
+        self.session_id = session_id
+        await self._create_empty_history_file()
+        self._initialize_components()
+
+    async def load_session(self, session_id: str):
+        self.session_id = session_id
+        if not os.path.exists(self._get_history_file_path()):
+            await self._create_empty_history_file()
+        self._initialize_components()
+
+    async def _create_empty_history_file(self):
+        file_path = self._get_history_file_path()
+        async with aiofiles.open(file_path, 'w') as f:
+            await f.write('[]')
+
+    async def get_conversation_history(self) -> List[dict]:
+        return [message.dict() for message in self.memory.chat_memory.messages]
+
+    async def update_system_prompt(self, new_prompt: str):
+        self.system_prompt = new_prompt
+        self.chain = self._initialize_chain()

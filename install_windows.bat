@@ -11,7 +11,7 @@ if errorlevel 1 (
 
 :: Define environment name and Python version
 set ENV_NAME=taleweaver
-set PYTHON_VERSION=3.12.3
+set PYTHON_VERSION=3.12.4
 
 :: Deactivate any active conda environment
 call conda deactivate
