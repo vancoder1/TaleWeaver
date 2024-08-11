@@ -69,6 +69,10 @@ class AIClient:
                 {"input": input_text},
                 config={"configurable": {"session_id": self.session_id}}
             )
+        except Exception as e:
+            # Log the error and return a user-friendly message
+            print(f"Error generating response: {str(e)}")
+            return "I'm sorry, but I encountered an error while processing your request. Please try again."
 
     async def start_new_session(self, session_id: str):
         self.session_id = session_id

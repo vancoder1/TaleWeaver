@@ -86,16 +86,20 @@ class Server:
 
     async def action(self, action: str, player_name: str) -> List[Tuple[str, str]]:
         logger.debug(f"Received action from {player_name}: {action}")
-        response = await self.ai_client.generate(f"{player_name}: {action}")
-        logger.debug(f"AI response: {response}")
-        new_messages = [
-            (player_name + ": " + action,
-             "AI: " + response)
-        ]
-        self.message_history.extend(new_messages)
-        await self._save_metadata()
-        await self.broadcast_messages(new_messages)
-        return new_messages
+        try:
+            response = await self.ai_client.generate(f"{player_name}: {action}")
+            logger.debug(f"AI response: {response}")
+            new_messages = [
+                (player_name + ": " + action,
+                 "AI: " + response)
+            ]
+            self.message_history.extend(new_messages)
+            await self._save_metadata()
+            await self.broadcast_messages(new_messages)
+            return new_messages
+        except Exception as e:
+            logger.error(f"Error processing action: {str(e)}")
+            return [(player_name + ": " + action, "AI: I'm sorry, but I encountered an error. Please try again.")]
 
     async def _save_metadata(self):
         if not self.current_session:
