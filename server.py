@@ -13,6 +13,7 @@ from hypercorn.asyncio import serve
 from hypercorn.config import Config
 import threading
 import websockets
+from deep_translator import GoogleTranslator
 
 # Get settings from the .env file
 load_dotenv("config.env")
@@ -26,6 +27,15 @@ logger = logging.getLogger(__name__)
 
 app = Quart(__name__)
 
+LANGUAGES = {
+    "english": "en",
+    "russian": "ru",
+    "chinese": "zh-CN",
+    "japanese": "ja",
+    "french": "fr",
+    "german": "de"
+}
+
 class Server:
     def __init__(self, model: str):
         self.model = model
@@ -36,6 +46,8 @@ class Server:
         self.message_history: List[Tuple[str, str]] = []
         self.ai_client = AIClient(api_key=GROQ_API, model=self.model)
         self.metadata_lock = asyncio.Lock()
+        self.translation_enabled = False
+        self.language = "en"
 
     def generate_system_prompt(self) -> str:
         player_prompts = "\n".join([f"Player {player.name}'s character: {player.backstory}" 
@@ -62,11 +74,13 @@ class Server:
                 return f"Player {name} removed from the game."
         return "Player not found."
 
-    async def start_game(self, session_name: str, setting: str) -> str:
+    async def start_game(self, session_name: str, setting: str, language: str, translation_enabled: bool) -> str:
         self.current_session = session_name
         self.setting = setting
         self.players.clear()
         self.message_history.clear()
+        self.language = language
+        self.translation_enabled = translation_enabled
         new_system_prompt = self.generate_system_prompt()
         await self.ai_client.update_system_prompt(new_system_prompt)
         await self.ai_client.start_new_session(session_name)
@@ -87,8 +101,17 @@ class Server:
     async def action(self, action: str, player_name: str) -> List[Tuple[str, str]]:
         logger.debug(f"Received action from {player_name}: {action}")
         try:
+            if self.translation_enabled and self.language != "en":
+                translator = GoogleTranslator(source=self.language, target='en')
+                action = translator.translate(action)
+            
             response = await self.ai_client.generate(f"{player_name}: {action}")
             logger.debug(f"AI response: {response}")
+            
+            if self.translation_enabled and self.language != "en":
+                translator = GoogleTranslator(source='en', target=self.language)
+                response = translator.translate(response)
+            
             new_messages = [
                 (player_name + ": " + action,
                  "AI: " + response)
@@ -108,7 +131,9 @@ class Server:
         metadata = {
             "players": {name: player.to_dict() for name, player in self.players.items()},
             "setting": self.setting,
-            "message_history": self.message_history
+            "message_history": self.message_history,
+            "language": self.language,
+            "translation_enabled": self.translation_enabled
         }
         
         metadata_path = self._get_metadata_path(self.current_session)
@@ -119,7 +144,7 @@ class Server:
     def _get_metadata_path(self, session_name: str) -> str:
         return os.path.join(self.ai_client.history_dir, f"{session_name}_metadata.json")
 
-    async def load_session(self, session_name: str) -> str:
+    async def load_session(self, session_name: str, language: str, translation_enabled: bool) -> str:
         self.current_session = session_name
         metadata_path = self._get_metadata_path(session_name)
         
@@ -131,6 +156,16 @@ class Server:
             self.players = {name: Player.from_dict(player_data) for name, player_data in metadata["players"].items()}
             self.setting = metadata["setting"]
             self.message_history = metadata.get("message_history", [])
+            self.language = language
+            self.translation_enabled = translation_enabled
+            
+            if self.translation_enabled and self.language != metadata.get("language", "en"):
+                translator = GoogleTranslator(source=metadata.get("language", "en"), target=self.language)
+                self.message_history = [
+                    (translator.translate(msg[0]),
+                     translator.translate(msg[1]))
+                    for msg in self.message_history
+                ]
             
             await self.ai_client.load_session(session_name)
             new_system_prompt = self.generate_system_prompt()
@@ -179,14 +214,14 @@ async def websocket_handler(websocket, path):
 @app.route('/start_game', methods=['POST'])
 async def start_game():
     data = await request.get_json()
-    result = await server.start_game(data['session'], data['setting'])
+    result = await server.start_game(data['session'], data['setting'], LANGUAGES[data['language']], data['translation_enabled'])
     player_result = await server.add_player(data['name'], data['backstory'], None)
     return jsonify({"status": f"{result} {player_result}"})
 
 @app.route('/load_session', methods=['POST'])
 async def load_session():
     data = await request.get_json()
-    result = await server.load_session(data['session_name'])
+    result = await server.load_session(data['session_name'], LANGUAGES[data['language']], data['translation_enabled'])
     return jsonify({"status": result, "history": server.message_history})
 
 @app.route('/available_sessions', methods=['GET'])
@@ -211,6 +246,9 @@ def create_gradio_interface():
                 setting_input = gr.Textbox(label="Enter the setting for the adventure")
                 name_input = gr.Textbox(label="Enter your character's name")
                 backstory_input = gr.Textbox(label="Enter your character's backstory")
+            with gr.Column():
+                language_dropdown = gr.Dropdown(label="Select Language", choices=list(LANGUAGES.keys()), value="english")
+                translation_checkbox = gr.Checkbox(label="Enable Translation", value=False)
             
             start_button = gr.Button("Start New Game")
             load_dropdown = gr.Dropdown(label="Load Previous Session", choices=server.get_available_sessions())
@@ -223,24 +261,24 @@ def create_gradio_interface():
                 action_input = gr.Textbox(label="Enter your action")
                 game_status = gr.Textbox(label="Game Status", value="Not connected to a game session.")
                 
-        async def start_game_gradio(session, setting, name, backstory):
-            result = await server.start_game(session, setting)
+        async def start_game_gradio(session, setting, name, backstory, language, translation_enabled):
+            result = await server.start_game(session, setting, LANGUAGES[language], translation_enabled)
             player_result = await server.add_player(name, backstory, None)
             return f"{result}\n{player_result}", server.message_history, f"Connected to game: {session}"
 
         start_button.click(
             start_game_gradio,
-            inputs=[session_name, setting_input, name_input, backstory_input],
+            inputs=[session_name, setting_input, name_input, backstory_input, language_dropdown, translation_checkbox],
             outputs=[setup_status, chat_history, game_status]
         )
 
-        async def load_session_gradio(session_name):
-            result = await server.load_session(session_name)
+        async def load_session_gradio(session_name, language, translation_enabled):
+            result = await server.load_session(session_name, LANGUAGES[language], translation_enabled)
             return result, server.message_history, f"Loaded session: {session_name}"
 
         load_button.click(
             load_session_gradio,
-            inputs=[load_dropdown],
+            inputs=[load_dropdown, language_dropdown, translation_checkbox],
             outputs=[setup_status, chat_history, game_status]
         )
 

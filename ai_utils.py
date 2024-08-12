@@ -36,7 +36,7 @@ class AIClient:
         return ConversationSummaryBufferMemory(
             llm=self.llm,
             chat_memory=file_history,
-            max_token_limit=2000,
+            max_token_limit=8192,
             return_messages=True,
         )
 
