@@ -49,7 +49,13 @@ TaleWeaver is an AI-driven, text-based adventure game where your imagination lea
 
 ## 📖 Usage
 
-1. **Start the Application**:
+1. **Put your GROQ API key into config.env**
+
+    ```sh
+    GROQ_API = ""
+    ```
+
+3. **Start the Application**:
 
    To start server:
     ```sh
@@ -60,16 +66,16 @@ TaleWeaver is an AI-driven, text-based adventure game where your imagination lea
     .\start_client_windows.bat
     ```
 
-2. **Follow the link in console to open WebUI in your browser**
+4. **Follow the link in console to open WebUI in your browser**
 
-3. **Begin Your Adventure**:
+5. **Begin Your Adventure**:
     - Follow the prompts to create or join a story session.
 
-4. **Multiplayer Mode**:
+6. **Multiplayer Mode**:
     - Share your IP (local COOP only) with friends to play together.
     - Collaborate on story decisions and see how the narrative evolves.
 
-5. **Custom World Settings**:
+7. **Custom World Settings**:
     - Before starting, you can customize world settings like setting and your character.
 
 ## 🤝 Contributing
