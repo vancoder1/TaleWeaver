@@ -101,6 +101,7 @@ class Server:
     async def action(self, action: str, player_name: str) -> List[Tuple[str, str]]:
         logger.debug(f"Received action from {player_name}: {action}")
         try:
+            original_action = action
             if self.translation_enabled and self.language != "en":
                 translator = GoogleTranslator(source=self.language, target='en')
                 action = translator.translate(action)
@@ -110,11 +111,13 @@ class Server:
             
             if self.translation_enabled and self.language != "en":
                 translator = GoogleTranslator(source='en', target=self.language)
-                response = translator.translate(response)
+                translated_response = translator.translate(response)
+            else:
+                translated_response = response
             
             new_messages = [
-                (player_name + ": " + action,
-                 "AI: " + response)
+                (player_name + ": " + original_action,
+                "AI: " + translated_response)
             ]
             self.message_history.extend(new_messages)
             await self._save_metadata()
@@ -155,17 +158,14 @@ class Server:
             
             self.players = {name: Player.from_dict(player_data) for name, player_data in metadata["players"].items()}
             self.setting = metadata["setting"]
-            self.message_history = metadata.get("message_history", [])
             self.language = language
             self.translation_enabled = translation_enabled
             
-            if self.translation_enabled and self.language != metadata.get("language", "en"):
-                translator = GoogleTranslator(source=metadata.get("language", "en"), target=self.language)
-                self.message_history = [
-                    (translator.translate(msg[0]),
-                     translator.translate(msg[1]))
-                    for msg in self.message_history
-                ]
+            # Use the appropriate message history based on the current language setting
+            if self.language == metadata.get("language") and self.translation_enabled == metadata.get("translation_enabled", False):
+                self.message_history = metadata.get("message_history", [])
+            else:
+                self.message_history = metadata.get("translated_history", metadata.get("message_history", []))
             
             await self.ai_client.load_session(session_name)
             new_system_prompt = self.generate_system_prompt()
