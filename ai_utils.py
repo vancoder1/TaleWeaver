@@ -1,6 +1,6 @@
 import os
-import json
-from typing import AsyncGenerator, Optional, List
+import logging
+from typing import List
 from langchain_groq import ChatGroq
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain.memory import ConversationSummaryBufferMemory
@@ -8,7 +8,6 @@ from langchain_community.chat_message_histories.file import FileChatMessageHisto
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 import aiofiles
-import logging
 
 class AIClient:
     def __init__(self, 
@@ -23,8 +22,8 @@ class AIClient:
         self.session_id = session_id
         self.history_dir = history_dir
         os.makedirs(self.history_dir, exist_ok=True)
-        self._initialize_components()
         self.logger = logging.getLogger(__name__)
+        self._initialize_components()
 
     def _initialize_components(self):
         self.llm = ChatGroq(api_key=self.api_key, model=self.model, streaming=True)
@@ -49,9 +48,7 @@ class AIClient:
             MessagesPlaceholder(variable_name="history"),
             ("human", "{input}"),
         ])
-
         chain = prompt | self.llm | StrOutputParser()
-
         return RunnableWithMessageHistory(
             chain,
             lambda session_id: self.memory.chat_memory,
@@ -68,10 +65,7 @@ class AIClient:
         except FileNotFoundError:
             self.logger.warning(f"History file not found for session {self.session_id}. Creating a new one.")
             await self._create_empty_history_file()
-            return await self.chain.ainvoke(
-                {"input": input_text},
-                config={"configurable": {"session_id": self.session_id}}
-            )
+            return await self.generate(input_text)
         except Exception as e:
             self.logger.error(f"Error generating response: {str(e)}", exc_info=True)
             return "I'm sorry, but I encountered an error while processing your request. Please try again."
@@ -101,6 +95,5 @@ class AIClient:
         self._initialize_components()
 
     def __del__(self):
-        # Ensure proper cleanup of resources
-        if hasattr(self, 'llm'):
+        if hasattr(self, 'llm') and hasattr(self.llm, 'client'):
             self.llm.client.close()

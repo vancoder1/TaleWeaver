@@ -1,9 +1,10 @@
 import os
 import json
 import asyncio
+import threading
 import aiofiles
 import logging
-from typing import Optional, Dict, Set, List, Tuple
+from typing import Dict, Set, List, Tuple
 from quart import Quart, request, jsonify
 from dotenv import load_dotenv
 import gradio as gr
@@ -11,11 +12,10 @@ from ai_utils import AIClient
 from game_logic import Player
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
-import threading
 import websockets
 from deep_translator import GoogleTranslator
 
-# Get settings from the .env file
+# Load environment variables
 load_dotenv("config.env")
 GROQ_API = os.getenv("GROQ_API")
 MODEL = os.getenv("MODEL")
@@ -54,18 +54,18 @@ class Server:
                                     for player in self.players.values()])
         return f"You are guiding an adventure with a {self.setting} setting.\n{player_prompts}"
 
-    async def add_player(self, name: str, backstory: str, ws: Optional[websockets.WebSocketServerProtocol]) -> str:
+    async def add_player(self, name: str, backstory: str, ws: websockets.WebSocketServerProtocol = None) -> str:
         if name not in self.players:
             self.players[name] = Player(name, backstory)
-            if ws is not None:
+            if ws:
                 self.connections.add(ws)
             await self._save_metadata()
             logger.info(f"Player {name} added to the game.")
             return f"Player {name} added to the game."
         return f"Player {name} is already in the game."
 
-    async def remove_player(self, ws: Optional[websockets.WebSocketServerProtocol]) -> str:
-        if ws is not None and ws in self.connections:
+    async def remove_player(self, ws: websockets.WebSocketServerProtocol = None) -> str:
+        if ws and ws in self.connections:
             self.connections.remove(ws)
         for name, player in list(self.players.items()):
             if getattr(player, 'connection', None) == ws:
@@ -89,17 +89,12 @@ class Server:
 
     async def broadcast_messages(self, messages: List[Tuple[str, str]]):
         if self.connections:
-            message = json.dumps({
-                "type": "UPDATE_HISTORY",
-                "messages": messages
-            })
-            logger.debug(f"Broadcasting message to {len(self.connections)} connections: {message}")
+            message = json.dumps({"type": "UPDATE_HISTORY", "messages": messages})
             websockets.broadcast(self.connections, message)
         else:
             logger.warning("No connections to broadcast to")
 
     async def action(self, action: str, player_name: str) -> List[Tuple[str, str]]:
-        logger.debug(f"Received action from {player_name}: {action}")
         try:
             original_action = action
             if self.translation_enabled and self.language != "en":
@@ -107,7 +102,6 @@ class Server:
                 action = translator.translate(action)
             
             response = await self.ai_client.generate(f"{player_name}: {action}")
-            logger.debug(f"AI response: {response}")
             
             if self.translation_enabled and self.language != "en":
                 translator = GoogleTranslator(source='en', target=self.language)
@@ -115,10 +109,7 @@ class Server:
             else:
                 translated_response = response
             
-            new_messages = [
-                (player_name + ": " + original_action,
-                "AI: " + translated_response)
-            ]
+            new_messages = [(player_name + ": " + original_action, "AI: " + translated_response)]
             self.message_history.extend(new_messages)
             await self._save_metadata()
             await self.broadcast_messages(new_messages)
@@ -161,11 +152,11 @@ class Server:
             self.language = language
             self.translation_enabled = translation_enabled
             
-            # Use the appropriate message history based on the current language setting
-            if self.language == metadata.get("language") and self.translation_enabled == metadata.get("translation_enabled", False):
-                self.message_history = metadata.get("message_history", [])
-            else:
-                self.message_history = metadata.get("translated_history", metadata.get("message_history", []))
+            self.message_history = metadata.get("message_history", [])
+            if self.language != metadata.get("language") or self.translation_enabled != metadata.get("translation_enabled", False):
+                # Translate message history if language settings have changed
+                translator = GoogleTranslator(source=metadata.get("language", "en"), target=self.language)
+                self.message_history = [(msg[0], translator.translate(msg[1])) for msg in self.message_history]
             
             await self.ai_client.load_session(session_name)
             new_system_prompt = self.generate_system_prompt()
@@ -186,10 +177,8 @@ server = Server(MODEL)
 async def websocket_handler(websocket, path):
     try:
         logger.info(f"New WebSocket connection from {websocket.remote_address}")
-        while True:
-            data = await websocket.recv()
-            logger.debug(f"Received data: {data}")
-            data = json.loads(data)
+        async for message in websocket:
+            data = json.loads(message)
             if data["type"] == "CHARACTER_SETUP":
                 add_response = await server.add_player(data["name"], data.get("backstory", ""), websocket)
                 await websocket.send(json.dumps({
@@ -204,10 +193,6 @@ async def websocket_handler(websocket, path):
                 await server.broadcast_messages(new_messages)
     except websockets.exceptions.ConnectionClosed:
         logger.info(f"WebSocket connection closed for {websocket.remote_address}")
-    except json.JSONDecodeError:
-        logger.error(f"Failed to decode JSON: {data}")
-    except Exception as e:
-        logger.error(f"Error in websocket handler: {str(e)}", exc_info=True)
     finally:
         await server.remove_player(websocket)
 
@@ -215,7 +200,7 @@ async def websocket_handler(websocket, path):
 async def start_game():
     data = await request.get_json()
     result = await server.start_game(data['session'], data['setting'], LANGUAGES[data['language']], data['translation_enabled'])
-    player_result = await server.add_player(data['name'], data['backstory'], None)
+    player_result = await server.add_player(data['name'], data['backstory'])
     return jsonify({"status": f"{result} {player_result}"})
 
 @app.route('/load_session', methods=['POST'])
@@ -263,7 +248,7 @@ def create_gradio_interface():
                 
         async def start_game_gradio(session, setting, name, backstory, language, translation_enabled):
             result = await server.start_game(session, setting, LANGUAGES[language], translation_enabled)
-            player_result = await server.add_player(name, backstory, None)
+            player_result = await server.add_player(name, backstory)
             return f"{result}\n{player_result}", server.message_history, f"Connected to game: {session}"
 
         start_button.click(
@@ -282,18 +267,12 @@ def create_gradio_interface():
             outputs=[setup_status, chat_history, game_status]
         )
 
-        async def update_chat(history):
-            return history
-
-        chat_history.change(update_chat, inputs=[chat_history], outputs=[chat_history])
-
         async def chat_action(action, history):
             if not server.players:
                 return history + [("System", "Please set up your character first.")], "", "Not in a game session."
             player_name = list(server.players.keys())[0]
             new_messages = await server.action(action, player_name)
             updated_history = history + new_messages
-            await server.broadcast_messages(new_messages)
             return updated_history, "", "Action submitted and response received."
 
         action_input.submit(
@@ -310,13 +289,20 @@ async def main():
     
     gradio_app = create_gradio_interface()
     
-    websocket_server = await websockets.serve(websocket_handler, "0.0.0.0", WS_PORT)
-    
+    # Create an event to signal when Gradio is ready
+    gradio_ready = asyncio.Event()
+
     def run_gradio():
         gradio_app.launch(server_port=7860, prevent_thread_lock=True)
+        gradio_ready.set()  # Signal that Gradio is ready
 
-    gradio_thread = threading.Thread(target=run_gradio)
-    gradio_thread.start()
+    # Start Gradio in a separate thread
+    threading.Thread(target=run_gradio, daemon=True).start()
+
+    # Wait for Gradio to be ready
+    await gradio_ready.wait()
+    
+    websocket_server = await websockets.serve(websocket_handler, "0.0.0.0", WS_PORT)
     
     await asyncio.gather(
         serve(app, config),
