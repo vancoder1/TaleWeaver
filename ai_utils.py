@@ -3,7 +3,7 @@ import logging
 from typing import List
 from langchain_groq import ChatGroq
 from langchain_core.runnables.history import RunnableWithMessageHistory
-from langchain.memory import ConversationSummaryBufferMemory
+from langchain.memory import ConversationSummaryMemory
 from langchain_community.chat_message_histories.file import FileChatMessageHistory
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -20,6 +20,7 @@ class AIClient:
         self.api_key = api_key
         self.system_prompt = system_prompt
         self.session_id = session_id
+        self.summary = ""
         self.history_dir = history_dir
         os.makedirs(self.history_dir, exist_ok=True)
         self.logger = logging.getLogger(__name__)
@@ -32,10 +33,10 @@ class AIClient:
 
     def _initialize_memory(self):
         file_history = FileChatMessageHistory(self._get_history_file_path())
-        return ConversationSummaryBufferMemory(
+        return ConversationSummaryMemory(
             llm=self.llm,
             chat_memory=file_history,
-            max_token_limit=8192,
+            max_token_limit=450,
             return_messages=True,
         )
 
