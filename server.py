@@ -4,28 +4,20 @@ import asyncio
 import threading
 import aiofiles
 import logging
-from typing import Dict, Set, List, Tuple
-from quart import Quart, request, jsonify
+from typing import Dict, List, Tuple
 from dotenv import load_dotenv
 import gradio as gr
 from ai_utils import AIClient
 from game_logic import Player
-from hypercorn.asyncio import serve
-from hypercorn.config import Config
-import websockets
 from deep_translator import GoogleTranslator
 
 # Load environment variables
 load_dotenv("config.env")
 GROQ_API = os.getenv("GROQ_API")
 MODEL = os.getenv("MODEL")
-WS_PORT = int(os.getenv("WS_PORT", "8765"))
-HTTP_PORT = int(os.getenv("HTTP_PORT", "8000"))
 
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
-
-app = Quart(__name__)
 
 LANGUAGES = {
     "english": "en",
@@ -40,7 +32,6 @@ class Server:
     def __init__(self, model: str):
         self.model = model
         self.players: Dict[str, Player] = {}
-        self.connections: Set[websockets.WebSocketServerProtocol] = set()
         self.setting = ""
         self.current_session: str = ""
         self.message_history: List[Tuple[str, str]] = []
@@ -54,24 +45,19 @@ class Server:
                                     for player in self.players.values()])
         return f"You are guiding an adventure with a {self.setting} setting.\n{player_prompts}"
 
-    async def add_player(self, name: str, backstory: str, ws: websockets.WebSocketServerProtocol = None) -> str:
+    async def add_player(self, name: str, backstory: str) -> str:
         if name not in self.players:
             self.players[name] = Player(name, backstory)
-            if ws:
-                self.connections.add(ws)
             await self._save_metadata()
             logger.info(f"Player {name} added to the game.")
             return f"Player {name} added to the game."
         return f"Player {name} is already in the game."
 
-    async def remove_player(self, ws: websockets.WebSocketServerProtocol = None) -> str:
-        if ws and ws in self.connections:
-            self.connections.remove(ws)
-        for name, player in list(self.players.items()):
-            if getattr(player, 'connection', None) == ws:
-                del self.players[name]
-                await self._save_metadata()
-                return f"Player {name} removed from the game."
+    async def remove_player(self, name: str) -> str:
+        if name in self.players:
+            del self.players[name]
+            await self._save_metadata()
+            return f"Player {name} removed from the game."
         return "Player not found."
 
     async def start_game(self, session_name: str, setting: str, language: str, translation_enabled: bool) -> str:
@@ -86,13 +72,6 @@ class Server:
         await self.ai_client.start_new_session(session_name)
         await self._save_metadata()
         return f"Game '{session_name}' started. You can now start your adventure!"
-
-    async def broadcast_messages(self, messages: List[Tuple[str, str]]):
-        if self.connections:
-            message = json.dumps({"type": "UPDATE_HISTORY", "messages": messages})
-            websockets.broadcast(self.connections, message)
-        else:
-            logger.warning("No connections to broadcast to")
 
     async def action(self, action: str, player_name: str) -> List[Tuple[str, str]]:
         try:
@@ -112,7 +91,6 @@ class Server:
             new_messages = [(player_name + ": " + original_action, "AI: " + translated_response)]
             self.message_history.extend(new_messages)
             await self._save_metadata()
-            await self.broadcast_messages(new_messages)
             return new_messages
         except Exception as e:
             logger.error(f"Error processing action: {str(e)}")
@@ -174,53 +152,7 @@ class Server:
 
 server = Server(MODEL)
 
-async def websocket_handler(websocket, path):
-    try:
-        logger.info(f"New WebSocket connection from {websocket.remote_address}")
-        async for message in websocket:
-            data = json.loads(message)
-            if data["type"] == "CHARACTER_SETUP":
-                add_response = await server.add_player(data["name"], data.get("backstory", ""), websocket)
-                await websocket.send(json.dumps({
-                    "type": "SETUP_RESPONSE",
-                    "content": add_response,
-                    "history": server.message_history
-                }))
-            elif data["type"] == "CLIENT_MESSAGE":
-                player_name = data.get("name", "Unknown Player")
-                action = data["content"]
-                new_messages = await server.action(action, player_name)
-                await server.broadcast_messages(new_messages)
-    except websockets.exceptions.ConnectionClosed:
-        logger.info(f"WebSocket connection closed for {websocket.remote_address}")
-    finally:
-        await server.remove_player(websocket)
-
-@app.route('/start_game', methods=['POST'])
-async def start_game():
-    data = await request.get_json()
-    result = await server.start_game(data['session'], data['setting'], LANGUAGES[data['language']], data['translation_enabled'])
-    player_result = await server.add_player(data['name'], data['backstory'])
-    return jsonify({"status": f"{result} {player_result}"})
-
-@app.route('/load_session', methods=['POST'])
-async def load_session():
-    data = await request.get_json()
-    result = await server.load_session(data['session_name'], LANGUAGES[data['language']], data['translation_enabled'])
-    return jsonify({"status": result, "history": server.message_history})
-
-@app.route('/available_sessions', methods=['GET'])
-async def available_sessions():
-    return jsonify(server.get_available_sessions())
-
-@app.route('/gm_action', methods=['POST'])
-async def gm_action():
-    data = await request.get_json()
-    player_name = data.get('player_name', 'Game Master')
-    new_messages = await server.action(data['action'], player_name)
-    return jsonify({"messages": new_messages})
-
-def create_gradio_interface():
+async def create_gradio_interface():
     with gr.Blocks(theme=gr.themes.Soft()) as interface:
         gr.Markdown("# TaleWeaver")
         
@@ -283,17 +215,14 @@ def create_gradio_interface():
 
     return interface
 
-async def main():
-    config = Config()
-    config.bind = [f"0.0.0.0:{HTTP_PORT}"]
-    
-    gradio_app = create_gradio_interface()
+async def main(): 
+    gradio_app = await create_gradio_interface()
     
     # Create an event to signal when Gradio is ready
     gradio_ready = asyncio.Event()
 
     def run_gradio():
-        gradio_app.launch(server_port=7860, prevent_thread_lock=True)
+        gradio_app.launch(prevent_thread_lock=True)
         gradio_ready.set()  # Signal that Gradio is ready
 
     # Start Gradio in a separate thread
@@ -301,13 +230,6 @@ async def main():
 
     # Wait for Gradio to be ready
     await gradio_ready.wait()
-    
-    websocket_server = await websockets.serve(websocket_handler, "0.0.0.0", WS_PORT)
-    
-    await asyncio.gather(
-        serve(app, config),
-        websocket_server.wait_closed()
-    )
 
 if __name__ == "__main__":
     asyncio.run(main())

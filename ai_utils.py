@@ -66,7 +66,10 @@ class AIClient:
         except FileNotFoundError:
             self.logger.warning(f"History file not found for session {self.session_id}. Creating a new one.")
             await self._create_empty_history_file()
-            return await self.generate(input_text)
+            return await self.chain.ainvoke(
+                {"input": input_text},
+                config={"configurable": {"session_id": self.session_id}}
+            )
         except Exception as e:
             self.logger.error(f"Error generating response: {str(e)}", exc_info=True)
             return "I'm sorry, but I encountered an error while processing your request. Please try again."
@@ -96,5 +99,5 @@ class AIClient:
         self._initialize_components()
 
     def __del__(self):
-        if hasattr(self, 'llm') and hasattr(self.llm, 'client'):
+        if hasattr(self, 'llm'):
             self.llm.client.close()
