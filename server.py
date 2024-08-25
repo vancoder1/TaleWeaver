@@ -144,9 +144,8 @@ class Server:
         except json.JSONDecodeError:
             return f"Error loading session: {session_name}. The save file may be corrupted."
         
-    async def update_available_sessions(self):
-        self.available_sessions = [f.split('_metadata.json')[0] for f in os.listdir(self.ai_client.history_dir) if f.endswith('_metadata.json')]
-        await self.gradio_interface.update_available_sessions(self.available_sessions)
+    def update_available_sessions(self):
+        self.available_sessions = self.get_available_sessions()
 
     def get_available_sessions(self) -> List[str]:
         history_dir = self.ai_client.history_dir
@@ -196,22 +195,24 @@ async def create_gradio_interface():
         async def start_game_gradio(session, setting, name, backstory, language):
             result = await server.start_game(session, setting, LANGUAGES[language])
             player_result = await server.add_player(name, backstory)
-            return f"{result}\n{player_result}", server.message_history, f"Connected to game: {session}"
+            server.update_available_sessions()
+            return f"{result}\n{player_result}", server.message_history, f"Connected to game: {session}", gr.Dropdown(choices=server.available_sessions)
 
         start_button.click(
             start_game_gradio,
             inputs=[session_name, setting_input, name_input, backstory_input, language_dropdown],
-            outputs=[setup_status, chat_history, game_status]
+            outputs=[setup_status, chat_history, game_status, load_dropdown]
         )
 
         async def load_session_gradio(session_name, language):
             result = await server.load_session(session_name, LANGUAGES[language])
-            return result, server.message_history, f"Loaded session: {session_name}"
+            server.update_available_sessions()
+            return result, server.message_history, f"Loaded session: {session_name}", gr.Dropdown(choices=server.available_sessions)
 
         load_button.click(
             load_session_gradio,
             inputs=[load_dropdown, language_dropdown],
-            outputs=[setup_status, chat_history, game_status]
+            outputs=[setup_status, chat_history, game_status, load_dropdown]
         )
 
         async def chat_action(action, history):
