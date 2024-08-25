@@ -14,7 +14,7 @@ class AIClient:
                  api_key: str, 
                  model: str, 
                  system_prompt: str,
-                 session_id: str = "taleweaver_session",
+                 session_id: str = "unidentified",
                  history_dir: str = "data/chats"):
         self.model = model
         self.api_key = api_key
@@ -41,7 +41,12 @@ class AIClient:
         )
 
     def _get_history_file_path(self) -> str:
-        return os.path.join(self.history_dir, f"{self.session_id}.json")
+        session_dir = os.path.join(self.history_dir, self.session_id)
+        os.makedirs(session_dir, exist_ok=True)
+        return os.path.join(session_dir, f"{self.session_id}.json")
+
+    def _get_session_dir(self) -> str:
+        return os.path.join(self.history_dir, self.session_id)
 
     def _initialize_chain(self):
         prompt = ChatPromptTemplate.from_messages([

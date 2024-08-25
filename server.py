@@ -113,7 +113,8 @@ class Server:
                 await f.write(json.dumps(metadata))
 
     def _get_metadata_path(self, session_name: str) -> str:
-        return os.path.join(self.ai_client.history_dir, f"{session_name}_metadata.json")
+        session_dir = os.path.join(self.ai_client.history_dir, session_name)
+        return os.path.join(session_dir, f"{session_name}_metadata.json")
 
     async def load_session(self, session_name: str, language: str) -> str:
         self.current_session = session_name
@@ -149,7 +150,7 @@ class Server:
 
     def get_available_sessions(self) -> List[str]:
         history_dir = self.ai_client.history_dir
-        return [f.split('_metadata.json')[0] for f in os.listdir(history_dir) if f.endswith('_metadata.json')]
+        return [d for d in os.listdir(history_dir) if os.path.isdir(os.path.join(history_dir, d))]
 
     async def update_config(self, new_config: Dict[str, str]) -> str:
         self.config.update(new_config)
