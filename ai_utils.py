@@ -13,7 +13,7 @@ class AIClient:
     def __init__(self, 
                  api_key: str, 
                  model: str, 
-                 system_prompt: str = "You are guiding an immersive adventure",
+                 system_prompt: str,
                  session_id: str = "taleweaver_session",
                  history_dir: str = "data/chats"):
         self.model = model

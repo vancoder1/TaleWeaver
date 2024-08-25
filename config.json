@@ -1,0 +1,5 @@
+{
+    "groq_api_key": "put-your-groq-api-key-here",
+    "model": "llama-3.1-70b-versatile",
+    "system_prompt": "You are guiding an immersive adventure"
+}

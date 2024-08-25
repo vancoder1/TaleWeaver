@@ -5,16 +5,10 @@ import threading
 import aiofiles
 import logging
 from typing import Dict, List, Tuple
-from dotenv import load_dotenv
-import gradio as gr
 from ai_utils import AIClient
 from game_logic import Player
 from deep_translator import GoogleTranslator
-
-# Load environment variables
-load_dotenv("config.env")
-GROQ_API = os.getenv("GROQ_API")
-MODEL = os.getenv("MODEL")
+import gradio as gr
 
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
@@ -29,20 +23,28 @@ LANGUAGES = {
 }
 
 class Server:
-    def __init__(self, model: str):
-        self.model = model
+    def __init__(self):
+        self.load_config()
         self.players: Dict[str, Player] = {}
         self.setting = ""
         self.current_session: str = ""
         self.message_history: List[Tuple[str, str]] = []
-        self.ai_client = AIClient(api_key=GROQ_API, model=self.model)
+        self.ai_client = AIClient(api_key=self.config['groq_api_key'], model=self.config['model'], system_prompt=self.config['system_prompt'])
         self.metadata_lock = asyncio.Lock()
         self.language = "en"
+
+    def load_config(self):
+        with open('config.json', 'r') as f:
+            self.config = json.load(f)
+
+    async def save_config(self):
+        async with aiofiles.open('config.json', 'w') as f:
+            await f.write(json.dumps(self.config, indent=4))
 
     def generate_system_prompt(self) -> str:
         player_prompts = "\n".join([f"Player {player.name}'s character: {player.backstory}" 
                                     for player in self.players.values()])
-        return f"You are guiding an adventure with a {self.setting} setting.\n{player_prompts}"
+        return f"{self.config['system_prompt']}\nSetting: {self.setting}\n{player_prompts}"
 
     async def add_player(self, name: str, backstory: str) -> str:
         if name not in self.players:
@@ -141,12 +143,22 @@ class Server:
             return f"No saved session found for: {session_name}. Please start a new game."
         except json.JSONDecodeError:
             return f"Error loading session: {session_name}. The save file may be corrupted."
+        
+    async def update_available_sessions(self):
+        self.available_sessions = [f.split('_metadata.json')[0] for f in os.listdir(self.ai_client.history_dir) if f.endswith('_metadata.json')]
+        await self.gradio_interface.update_available_sessions(self.available_sessions)
 
     def get_available_sessions(self) -> List[str]:
         history_dir = self.ai_client.history_dir
         return [f.split('_metadata.json')[0] for f in os.listdir(history_dir) if f.endswith('_metadata.json')]
 
-server = Server(MODEL)
+    async def update_config(self, new_config: Dict[str, str]) -> str:
+        self.config.update(new_config)
+        await self.save_config()
+        self.ai_client = AIClient(api_key=self.config['groq_api_key'], model=self.config['model'], system_prompt=self.config['system_prompt'])
+        return "Configuration updated successfully."
+
+server = Server()
 
 async def create_gradio_interface():
     with gr.Blocks(theme=gr.themes.Soft()) as interface:
@@ -172,7 +184,15 @@ async def create_gradio_interface():
                 chat_history = gr.Chatbot(label="Game History")
                 action_input = gr.Textbox(label="Enter your action")
                 game_status = gr.Textbox(label="Game Status", value="Not connected to a game session.")
-                
+
+        with gr.Tab("Settings"):
+            with gr.Column():
+                api_key_input = gr.Textbox(label="GROQ API Key", value=server.config['groq_api_key'])
+                model_input = gr.Textbox(label="Model", value=server.config['model'])
+                system_prompt_input = gr.Textbox(label="System Prompt", value=server.config['system_prompt'], lines=3)
+                update_config_button = gr.Button("Update Configuration")
+                config_status = gr.Textbox(label="Configuration Status")
+
         async def start_game_gradio(session, setting, name, backstory, language):
             result = await server.start_game(session, setting, LANGUAGES[language])
             player_result = await server.add_player(name, backstory)
@@ -206,6 +226,21 @@ async def create_gradio_interface():
             chat_action,
             inputs=[action_input, chat_history],
             outputs=[chat_history, action_input, game_status]
+        )
+
+        async def update_config_gradio(api_key, model, system_prompt):
+            new_config = {
+                "groq_api_key": api_key,
+                "model": model,
+                "system_prompt": system_prompt
+            }
+            result = await server.update_config(new_config)
+            return result
+
+        update_config_button.click(
+            update_config_gradio,
+            inputs=[api_key_input, model_input, system_prompt_input],
+            outputs=[config_status]
         )
 
     return interface
