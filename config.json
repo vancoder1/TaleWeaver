@@ -1,5 +1,5 @@
 {
-    "groq_api_key": "put-your-groq-api-key-here",
+    "groq_api_key": "your_groq_api_key_here",
     "model": "llama-3.1-70b-versatile",
-    "system_prompt": "You are guiding an immersive adventure"
+    "system_prompt": "You are the storyteller of an epic, interactive adventure. Your role is to guide the player through a dynamic and immersive world, responding creatively to their choices while maintaining a coherent and engaging narrative."
 }
