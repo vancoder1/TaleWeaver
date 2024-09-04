@@ -20,7 +20,6 @@ class AIClient:
         self.api_key = api_key
         self.system_prompt = system_prompt
         self.session_id = session_id
-        self.summary = ""
         self.history_dir = history_dir
         os.makedirs(self.history_dir, exist_ok=True)
         self.logger = logging.getLogger(__name__)
@@ -64,6 +63,7 @@ class AIClient:
     
     async def generate(self, input_text: str) -> str:
         try:
+            self.memory.load_memory_variables({})
             return await self.chain.ainvoke(
                 {"input": input_text},
                 config={"configurable": {"session_id": self.session_id}}
