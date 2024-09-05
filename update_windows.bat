@@ -2,6 +2,13 @@
 setlocal enabledelayedexpansion
 if not defined in_subprocess (cmd /k set in_subprocess=y ^& %0 %*) & exit
 
+:: Change to project directory
+cd /d "%~dp0"
+if %errorlevel% neq 0 (
+    echo Failed to change to project directory.
+    goto end
+)
+
 :: Ensure Git is installed and in PATH
 where git >nul 2>nul
 if errorlevel 1 (
@@ -28,6 +35,10 @@ call conda env list | findstr /C:"%ENV_NAME%" >nul
 if %errorlevel% neq 0 (
     echo Creating conda environment %ENV_NAME% with Python %PYTHON_VERSION%
     call conda create -y -n %ENV_NAME% python=%PYTHON_VERSION%
+    if %errorlevel% neq 0 (
+        echo Failed to create conda environment.
+        goto end
+    )
 ) else (
     echo Conda environment %ENV_NAME% already exists.
 )
@@ -39,18 +50,35 @@ if %errorlevel% neq 0 (
     goto end
 )
 
+:: Get current branch name
+for /f "tokens=*" %%i in ('git rev-parse --abbrev-ref HEAD') do set BRANCH_NAME=%%i
+echo Current branch: %BRANCH_NAME%
+
 :: Check for Git updates
 echo Checking for updates...
 git fetch origin
+if %errorlevel% neq 0 (
+    echo Failed to fetch updates from remote.
+    goto end
+)
+
 git status -uno | findstr "Your branch is up to date" >nul
 if %errorlevel% neq 0 (
     echo Updates available. Pulling changes...
-    git pull origin main
+    git pull origin %BRANCH_NAME%
+    if %errorlevel% neq 0 (
+        echo Failed to pull updates.
+        goto end
+    )
     
     :: Reinstall requirements in case they've changed
     if exist requirements.txt (
         echo Updating requirements...
         pip install -r requirements.txt
+        if %errorlevel% neq 0 (
+            echo Failed to update requirements.
+            goto end
+        )
     )
     
     echo Update complete.
@@ -62,5 +90,6 @@ if %errorlevel% neq 0 (
 call conda deactivate
 
 :end
+echo Script execution completed.
 pause
 endlocal
