@@ -22,6 +22,8 @@ LANGUAGES = {
     "german": "de"
 }
 
+MODES = ["Say", "Do"]
+
 class Server:
     def __init__(self):
         self.load_config()
@@ -73,14 +75,21 @@ class Server:
         await self._save_metadata()
         return f"Game '{session_name}' started. You can now start your adventure!"
 
-    async def action(self, action: str, player_name: str) -> List[Tuple[str, str]]:
+    async def action(self, action: str, player_name: str, mode: str) -> List[Tuple[str, str]]:
         try:
             original_action = action
             if self.language != "en":
                 translator = GoogleTranslator(source=self.language, target='en')
                 action = translator.translate(action)
             
-            response = await self.ai_client.generate(f"{player_name}: {action}")
+            if mode == "Say":
+                formatted_action = f"{player_name} says: \"{action}\""
+            elif mode == "Do":
+                formatted_action = f"{player_name} does: {action}"
+            else:  # Story mode
+                formatted_action = f"Continue the story without player input."
+            
+            response = await self.ai_client.generate(formatted_action)
             
             if self.language != "en":
                 translator = GoogleTranslator(source='en', target=self.language)
@@ -88,13 +97,18 @@ class Server:
             else:
                 translated_response = response
             
-            new_messages = [(player_name + ": " + original_action, "AI: " + translated_response)]
+            if mode != "Story":
+                new_messages = [(player_name + f" ({mode}): " + original_action, "AI: " + translated_response)]
+            else:
+                new_messages = [("AI", translated_response)]
+            
             self.message_history.extend(new_messages)
             await self._save_metadata()
             return new_messages
         except Exception as e:
             logger.error(f"Error processing action: {str(e)}")
-            return [(player_name + ": " + action, "AI: I'm sorry, but I encountered an error. Please try again.")]
+            return [(player_name + f" ({mode}): " + action, "AI: I'm sorry, but I encountered an error. Please try again.")]
+
 
     async def _save_metadata(self):
         if not self.current_session:
@@ -182,7 +196,21 @@ async def create_gradio_interface():
         with gr.Tab("Game"):
             with gr.Column():
                 chat_history = gr.Chatbot(label="Game History")
-                action_input = gr.Textbox(label="Enter your action")
+                with gr.Row():
+                    mode_dropdown = gr.Dropdown(
+                        label="Mode", 
+                        choices=MODES, 
+                        value="Say", 
+                        scale=1
+                    )
+                    action_input = gr.Textbox(
+                        label="Enter your action", 
+                        scale=6
+                    )
+                    story_button = gr.Button(
+                        "Continue Story", 
+                        scale=1
+                    )
                 game_status = gr.Textbox(label="Game Status", value="Not connected to a game session.")
 
         with gr.Tab("Settings"):
@@ -216,18 +244,32 @@ async def create_gradio_interface():
             outputs=[setup_status, chat_history, game_status, load_dropdown]
         )
 
-        async def chat_action(action, history):
+        async def chat_action(action, mode, history):
             if not server.players:
                 return history + [("System", "Please set up your character first.")], "", "Not in a game session."
             player_name = list(server.players.keys())[0]
-            new_messages = await server.action(action, player_name)
+            new_messages = await server.action(action, player_name, mode)
             updated_history = history + new_messages
             return updated_history, "", "Action submitted and response received."
 
+        async def continue_story(history):
+            if not server.players:
+                return history + [("System", "Please set up your character first.")], "Not in a game session."
+            player_name = list(server.players.keys())[0]
+            new_messages = await server.action("", player_name, "Story")
+            updated_history = history + new_messages
+            return updated_history, "Story continued."
+
         action_input.submit(
             chat_action,
-            inputs=[action_input, chat_history],
+            inputs=[action_input, mode_dropdown, chat_history],
             outputs=[chat_history, action_input, game_status]
+        )
+
+        story_button.click(
+            continue_story,
+            inputs=[chat_history],
+            outputs=[chat_history, game_status]
         )
 
         async def update_config_gradio(api_key, model, system_prompt):
