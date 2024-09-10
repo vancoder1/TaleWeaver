@@ -3,6 +3,7 @@ import logging
 from typing import List
 from langchain_groq import ChatGroq
 from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_core.runnables import RunnablePassthrough
 from langchain.memory import ConversationSummaryMemory
 from langchain_community.chat_message_histories.file import FileChatMessageHistory
 from langchain_core.output_parsers import StrOutputParser
@@ -54,16 +55,38 @@ class AIClient:
             ("human", "{input}"),
         ])
         chain = prompt | self.llm | StrOutputParser()
-        return RunnableWithMessageHistory(
+        chain_with_message_history = RunnableWithMessageHistory(
             chain,
             lambda session_id: self.memory.chat_memory,
             input_messages_key="input",
             history_messages_key="history"
-        )  
+        )
+        return (RunnablePassthrough.assign(messages_summarized=self.summarize_messages)
+            | chain_with_message_history
+        )
+    
+    def summarize_messages(self, chain_input):
+        stored_messages = self.memory.chat_memory.messages
+        if len(stored_messages) == 0:
+            return False
+        summarization_prompt = ChatPromptTemplate.from_messages(
+            [
+                MessagesPlaceholder(variable_name="history"),
+                (
+                    "user",
+                    "Distill the above chat messages into a single summary message. Include as many specific details as you can.",
+                ),
+            ]
+        )
+        summarization_chain = summarization_prompt | self.llm
+        summary_message = summarization_chain.invoke({"history": stored_messages})
+        print (summary_message)
+        self.memory.chat_memory.clear()
+        self.memory.chat_memory.add_message(summary_message)
+        return True
     
     async def generate(self, input_text: str) -> str:
         try:
-            self.memory.load_memory_variables({})
             return await self.chain.ainvoke(
                 {"input": input_text},
                 config={"configurable": {"session_id": self.session_id}}
