@@ -80,7 +80,6 @@ class AIClient:
         )
         summarization_chain = summarization_prompt | self.llm
         summary_message = summarization_chain.invoke({"history": stored_messages})
-        print (summary_message)
         self.memory.chat_memory.clear()
         self.memory.chat_memory.add_message(summary_message)
         return True
