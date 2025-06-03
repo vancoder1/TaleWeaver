@@ -1,5 +1,5 @@
 {
-    "groq_api_key": "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",
+    "groq_api_key": "",
     "ai_settings": {
         "model": "llama-3.1-70b-versatile",
         "conversation_summary_max_token_limit": 450,
