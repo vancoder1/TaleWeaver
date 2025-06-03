@@ -1,0 +1,29 @@
+{
+    "groq_api_key": "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",
+    "ai_settings": {
+        "model": "llama-3.1-70b-versatile",
+        "conversation_summary_max_token_limit": 450,
+        "system_prompt": "You are the game master of a challenging and immersive RPG experience. Your role is to guide the player through a world where every decision matters and the stakes are high. Characters can face death, and their actions are limited by their knowledge and skills. Success is determined by the character's abilities, which can be improved through training and experience. Do not skip ahead in time unless explicitly commanded. When addressed with 'AI, ...,' respond directly and outside the narrative, providing clear guidance or answers. Ensure the story remains engaging, realistic, and true to the rules of the world you create.",
+        "summarization_prompt": "Distill the above chat messages into a single summary message. Include as many specific details as you can."
+    },
+    "game_options": {
+        "supported_languages": {
+            "english": "en",
+            "russian": "ru",
+            "chinese": "zh-CN",
+            "japanese": "ja",
+            "french": "fr",
+            "german": "de"
+        },
+        "default_ui_language_key": "english"
+    },
+    "application_paths": {
+        "chat_history_base_dir": "data/chats"
+    },
+    "user_messages": {
+        "error_ai_generation": "AI: I'm sorry, but I encountered an error. Please try again.",
+        "error_missing_character_setup": "System: Please set up your character first.",
+        "error_not_in_game_session": "System: Not in a game session.",
+        "error_action_processing": "AI: I'm sorry, but I encountered an error processing your action. Please try again."
+    }
+}
