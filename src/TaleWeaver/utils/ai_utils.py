@@ -224,9 +224,5 @@ class AIClient:
              except Exception as e:
                 logger.warning(f"Error closing LLM's sync client: {e}", exc_info=True)
 
-
     def __del__(self):
-        # __del__ is unreliable for resource cleanup. Use an explicit close() method.
-        # logger.debug(f"AIClient for session {self.session_id} is being deleted. (Cleanup via __del__ is best-effort)")
-        # Attempting synchronous close here is risky if client was async.
         pass

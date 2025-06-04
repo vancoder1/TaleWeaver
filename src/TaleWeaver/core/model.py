@@ -1,27 +1,20 @@
 from typing import Dict, Any
 
 class Player:
-    _id_counter = 0
-
-    def __init__(self, name: str, backstory: str = ""):
-        Player._id_counter += 1
-        self.player_id: int = Player._id_counter
-        self.name: str = name
-        self.backstory: str = backstory
+    def __init__(self, name: str = "Adventurer", backstory: str = "A mysterious wanderer with an unknown past."):
+        self.name: str = name if name else "Adventurer" # Ensure name is not empty
+        self.backstory: str = backstory if backstory else "A mysterious wanderer with an unknown past."
 
     def __str__(self) -> str:
-        return f"Player {self.player_id}: {self.name}"
+        return f"Character: {self.name}"
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "player_id": self.player_id,
-            "name": self.name,
-            "backstory": self.backstory
-        }
+        return {"name": self.name, "backstory": self.backstory}
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Player':
-        player = cls(data["name"], data["backstory"])
-        player.player_id = data["player_id"]
-        cls._id_counter = max(cls._id_counter, player.player_id)
-        return player
+        # Uses .get() to provide defaults if keys are missing or values are None/empty
+        return cls(
+            name=data.get("name") or "Adventurer",
+            backstory=data.get("backstory") or "A mysterious wanderer with an unknown past."
+        )
