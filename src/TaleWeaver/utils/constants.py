@@ -13,5 +13,3 @@ LANGUAGES = {
     "french": "fr",
     "german": "de"
 }
-
-MODES = ["Say", "Do"]
