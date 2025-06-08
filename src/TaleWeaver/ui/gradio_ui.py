@@ -48,18 +48,15 @@ def _build_ai_config_tab_components(server: Server):
     provider_api_key_input = gr.Textbox(label="API Key", type="password", interactive=True)
     provider_model_input = gr.Textbox(label="Model Name", interactive=True)
     provider_base_url_input = gr.Textbox(label="Base URL", interactive=True)
-    provider_additional_params_input = gr.Textbox(
-        label="Additional Params (JSON string)", lines=3, interactive=True, placeholder='e.g., {"temperature": 0.7}'
-    )
     system_prompt_input = gr.Textbox(
-        label="Base System Prompt",
+        label="System Prompt",
         value=lambda: server.json_handler.get_setting('ai_settings.system_prompt', ''),
         lines=8, interactive=True
     )
     update_ai_config_button = gr.Button("Update AI Configuration", variant="stop")
     ai_config_status_output = gr.Textbox(label="Status", interactive=False, lines=1)
     return (active_provider_dropdown, provider_api_key_input, provider_model_input,
-            provider_base_url_input, provider_additional_params_input, system_prompt_input,
+            provider_base_url_input, system_prompt_input,
             update_ai_config_button, ai_config_status_output)
 
 async def create_gradio_interface(server: Server):
@@ -82,25 +79,21 @@ async def create_gradio_interface(server: Server):
                      character_config_status_output) = _build_character_config_tab_components(server)
                 with gr.TabItem("AI Provider & Model Configuration"):
                     (active_provider_dropdown, provider_api_key_input, provider_model_input,
-                     provider_base_url_input, provider_additional_params_input, system_prompt_input,
+                     provider_base_url_input, system_prompt_input,
                      update_ai_config_button, ai_config_status_output) = _build_ai_config_tab_components(server)
 
         # --- Dynamic UI update for provider settings ---
         def get_provider_config_value(provider_key, setting_key, default=''):
             return server.json_handler.get_setting(f'ai_settings.providers.{provider_key}.{setting_key}', default)
-        def get_provider_additional_params_str(provider_key):
-            params = server.json_handler.get_setting(f'ai_settings.providers.{provider_key}.additional_params', {})
-            return json.dumps(params, indent=2) if params else "{}"
 
         def update_provider_fields_display(selected_provider):
             return (get_provider_config_value(selected_provider, 'api_key'),
                     get_provider_config_value(selected_provider, 'model'),
-                    get_provider_config_value(selected_provider, 'base_url'),
-                    get_provider_additional_params_str(selected_provider))
+                    get_provider_config_value(selected_provider, 'base_url'))
         
         active_provider_dropdown.change(
             fn=update_provider_fields_display, inputs=[active_provider_dropdown],
-            outputs=[provider_api_key_input, provider_model_input, provider_base_url_input, provider_additional_params_input]
+            outputs=[provider_api_key_input, provider_model_input, provider_base_url_input]
         )
         
         # --- Callbacks ---
@@ -156,7 +149,7 @@ async def create_gradio_interface(server: Server):
         update_character_button.click(update_char_config_cb, [character_name_input, character_backstory_input],
                                       [character_config_status_output, character_name_input, character_backstory_input])
 
-        async def update_ai_config_cb(provider, api_key, model, base_url, params_str, sys_prompt):
+        async def update_ai_config_cb(provider, api_key, model, base_url, sys_prompt):
             settings_to_update = {
                 "ai_settings.active_provider": provider,
                 f"ai_settings.providers.{provider}.api_key": api_key,
@@ -164,12 +157,6 @@ async def create_gradio_interface(server: Server):
                 f"ai_settings.providers.{provider}.base_url": base_url,
                 "ai_settings.system_prompt": sys_prompt
             }
-            try:
-                params_dict = json.loads(params_str) if params_str.strip() else {}
-                if not isinstance(params_dict, dict): raise ValueError("Must be JSON object")
-                settings_to_update[f"ai_settings.providers.{provider}.additional_params"] = params_dict
-            except Exception as e:
-                return f"Error in Additional Params JSON: {e}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
             status_msg = await server.update_config(settings_to_update)
             
@@ -184,19 +171,19 @@ async def create_gradio_interface(server: Server):
 
         update_ai_config_button.click(
             update_ai_config_cb,
-            [active_provider_dropdown, provider_api_key_input, provider_model_input, provider_base_url_input, provider_additional_params_input, system_prompt_input],
-            [ai_config_status_output, active_provider_dropdown, provider_api_key_input, provider_model_input, provider_base_url_input, provider_additional_params_input, system_prompt_input]
+            [active_provider_dropdown, provider_api_key_input, provider_model_input, provider_base_url_input, system_prompt_input],
+            [ai_config_status_output, active_provider_dropdown, provider_api_key_input, provider_model_input, provider_base_url_input, system_prompt_input]
         )
 
         def refresh_ui_on_load_cb():
             sessions = server.get_available_sessions()
             current_provider = server.json_handler.get_setting('ai_settings.active_provider', 'groq')
-            api_key, model, base_url, additional_params = update_provider_fields_display(current_provider)
+            api_key, model, base_url = update_provider_fields_display(current_provider)
             return (
                 gr.update(choices=sessions, value=sessions[0] if sessions else None),
                 gr.update(value=server.character.name), gr.update(value=server.character.backstory),
                 gr.update(value=current_provider, choices=list(server.json_handler.get_setting('ai_settings.providers', {}).keys())),
-                gr.update(value=api_key), gr.update(value=model), gr.update(value=base_url), gr.update(value=additional_params),
+                gr.update(value=api_key), gr.update(value=model), gr.update(value=base_url),
                 gr.update(value=server.json_handler.get_setting('ai_settings.system_prompt', ''))
             )
 
@@ -204,6 +191,6 @@ async def create_gradio_interface(server: Server):
             refresh_ui_on_load_cb, 
             outputs=[load_dropdown, character_name_input, character_backstory_input,
                      active_provider_dropdown, provider_api_key_input, provider_model_input,
-                     provider_base_url_input, provider_additional_params_input, system_prompt_input]
+                     provider_base_url_input, system_prompt_input]
         )
     return interface

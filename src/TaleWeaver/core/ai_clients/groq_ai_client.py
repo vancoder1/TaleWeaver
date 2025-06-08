@@ -15,25 +15,22 @@ from .ai_provider_interface import AIProviderInterface
 
 class GroqAIClient(AIProviderInterface):
     def __init__(self, model: str, system_prompt: str, session_id: str, history_dir: str,
-                 api_key: Optional[str] = None, **kwargs: Any):
+                 api_key: Optional[str] = None):
         super().__init__(model=model, system_prompt=system_prompt, session_id=session_id,
-                         history_dir=history_dir, api_key=api_key, **kwargs)
+                         history_dir=history_dir, api_key=api_key)
         if not self.api_key: raise ValueError("Groq API key is required.")
-        self._initialize_components(**self.additional_config)
+        self._initialize_components()
 
-    def _initialize_components(self, **kwargs: Any) -> None:
+    def _initialize_components(self) -> None:
         try:
-            self.llm = ChatGroq(
-                api_key=self.api_key, model_name=self.model_name,
-                streaming=kwargs.get('streaming', True), temperature=kwargs.get('temperature', 0.7)
-            )
+            self.llm = ChatGroq(api_key=self.api_key, model_name=self.model_name)
         except Exception as e:
             logger.error(f"Failed to initialize ChatGroq LLM: {e}", exc_info=True); raise
-        self.memory = self._initialize_memory(**kwargs)
+        self.memory = self._initialize_memory()
         self.chain = self._initialize_chain()
         logger.info(f"GroqAIClient components initialized for session: {self.session_id}")
 
-    def _initialize_memory(self, **kwargs: Any) -> Optional[ConversationSummaryMemory]:
+    def _initialize_memory(self) -> Optional[ConversationSummaryMemory]:
         if not self.llm: return None
         try:
             history_file_path = self._get_history_file_path()
@@ -44,7 +41,7 @@ class GroqAIClient(AIProviderInterface):
             file_chat_history = FileChatMessageHistory(file_path=history_file_path)
             return ConversationSummaryMemory(
                 llm=self.llm, chat_memory=file_chat_history,
-                max_token_limit=kwargs.get('conversation_summary_max_token_limit', 450),
+                max_token_limit=450, # Hardcoded as additional_params is removed
                 return_messages=True,
             )
         except Exception as e:
@@ -78,7 +75,7 @@ class GroqAIClient(AIProviderInterface):
         except FileNotFoundError: # History file deleted mid-session
             logger.warning(f"History file missing for {self.session_id}. Re-initializing.")
             await self._create_empty_history_file_async()
-            self._initialize_components(**self.additional_config) # Re-init all
+            self._initialize_components() # Re-init all
             if not self.chain: return "AI Error: Groq system reset. Try again."
             response = await self.chain.ainvoke(
                 {"input": input_text}, config={"configurable": {"session_id": self.session_id}}
@@ -96,7 +93,7 @@ class GroqAIClient(AIProviderInterface):
     async def start_new_session(self, session_id: str) -> None:
         self.session_id = session_id
         await self._create_empty_history_file_async()
-        self._initialize_components(**self.additional_config)
+        self._initialize_components()
 
     async def load_session(self, session_id: str) -> None:
         self.session_id = session_id
@@ -104,7 +101,7 @@ class GroqAIClient(AIProviderInterface):
         os.makedirs(os.path.dirname(history_file_path), exist_ok=True)
         if not os.path.exists(history_file_path) or os.path.getsize(history_file_path) == 0:
             await self._create_empty_history_file_async()
-        self._initialize_components(**self.additional_config)
+        self._initialize_components()
 
     async def get_conversation_history(self) -> List[BaseMessage]:
         if self.memory and hasattr(self.memory.chat_memory, 'messages'):

@@ -7,7 +7,7 @@ import aiofiles # Moved import here
 
 class AIProviderInterface(ABC):
     def __init__(self, model: str, system_prompt: str, session_id: str, history_dir: str,
-                 api_key: Optional[str] = None, base_url: Optional[str] = None, **kwargs: Any):
+                 api_key: Optional[str] = None, base_url: Optional[str] = None):
         self.model_name = model
         self.current_system_prompt = system_prompt
         self.session_id = session_id
@@ -17,12 +17,10 @@ class AIProviderInterface(ABC):
         self.llm: Any = None
         self.chain: Any = None
         self.memory: Any = None
-        self.additional_config = kwargs
         os.makedirs(self.history_dir, exist_ok=True)
-        # _initialize_components called by subclasses
 
     @abstractmethod
-    def _initialize_components(self, **kwargs: Any) -> None:
+    def _initialize_components(self) -> None:
         """Initializes LLM, memory, chain."""
         pass
 
